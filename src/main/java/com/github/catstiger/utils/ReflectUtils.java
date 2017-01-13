@@ -16,7 +16,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public final class ReflectUtils {
+  private static Logger logger = LoggerFactory.getLogger(ReflectUtils.class);
   /**
    * Naming prefix for CGLIB-renamed methods.
    * 
@@ -27,7 +31,7 @@ public final class ReflectUtils {
   private static final Method[] NO_METHODS = {};
 
   private static final Field[] NO_FIELDS = {};
-  
+
   private static final PropertyDescriptor[] NO_PROPERTY_DESCRIPTERS = {};
 
   /**
@@ -40,77 +44,78 @@ public final class ReflectUtils {
    * Cache for {@link Class#getDeclaredFields()}, allowing for fast iteration.
    */
   private static final Map<Class<?>, Field[]> declaredFieldsCache = new ConcurrentHashMap<Class<?>, Field[]>(256);
-  
+
   private static final Map<Class<?>, Field[]> fieldsCache = new ConcurrentHashMap<Class<?>, Field[]>(256);
-  
-  
+
   private static final Map<Class<?>, PropertyDescriptor[]> propertyDescriptorCache = new ConcurrentHashMap<Class<?>, PropertyDescriptor[]>(256);
 
   /**
-   * Convenience method to instantiate a class using its no-arg constructor.
-   * As this method doesn't try to load classes by name, it should avoid
+   * Convenience method to instantiate a class using its no-arg constructor. As
+   * this method doesn't try to load classes by name, it should avoid
    * class-loading issues.
+   * 
    * @param clazz class to instantiate
    * @return the new instance
    * @throws RuntimeException if the bean cannot be instantiated
    */
   public static <T> T instantiate(Class<T> clazz) {
-    if(clazz == null) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    
+
     if (clazz.isInterface()) {
       throw new RuntimeException("Specified class is an interface [" + clazz.getName() + "]");
     }
     try {
       return clazz.newInstance();
-    }
-    catch (InstantiationException ex) {
+    } catch (InstantiationException ex) {
       throw new RuntimeException("Specified class is an abstract class? [" + clazz.getName() + "]", ex);
-    }
-    catch (IllegalAccessException ex) {
+    } catch (IllegalAccessException ex) {
       throw new RuntimeException("Is the constructor accessible? [" + clazz.getName() + "]", ex);
     }
   }
-  
+
   /**
    * Retrieve the JavaBeans {@code PropertyDescriptor}s of a given class.
+   * 
    * @param clazz the Class to retrieve the PropertyDescriptors for
    * @return an array of {@code PropertyDescriptors} for the given class
    * @throws BeansException if PropertyDescriptor look fails
    */
   public static PropertyDescriptor[] getPropertyDescriptors(Class<?> clazz) {
-    if(clazz == null) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    
-    if(propertyDescriptorCache.containsKey(clazz)) {
+
+    if (propertyDescriptorCache.containsKey(clazz)) {
       return propertyDescriptorCache.get(clazz);
     }
-    
+
     Field[] fields = getFields(clazz);
-    if(fields == null || fields.length == 0) {
+    if (fields == null || fields.length == 0) {
       return NO_PROPERTY_DESCRIPTERS;
     }
-    
+
     PropertyDescriptor[] pds = new PropertyDescriptor[fields.length];
-    try {
-      for(int i = 0; i < fields.length; i++) {
+
+    for (int i = 0; i < fields.length; i++) {
+      try {
         PropertyDescriptor pd = new PropertyDescriptor(fields[i].getName(), clazz);
         pds[i] = pd;
+      } catch (IntrospectionException e) {
+        logger.warn(e.getMessage());
       }
-    } catch (IntrospectionException e) {
-      e.printStackTrace();
     }
+
     propertyDescriptorCache.put(clazz, pds);
-    
-    
+
     return pds;
   }
-  
+
   /**
-   * Attempt to find a {@link Field field} on the supplied {@link Class} with the
-   * supplied {@code name}. Searches all superclasses up to {@link Object}.
+   * Attempt to find a {@link Field field} on the supplied {@link Class} with
+   * the supplied {@code name}. Searches all superclasses up to {@link Object}.
+   * 
    * @param clazz the class to introspect
    * @param name the name of the field
    * @return the corresponding Field object, or {@code null} if not found
@@ -118,15 +123,15 @@ public final class ReflectUtils {
   public static Field findField(Class<?> clazz, String name) {
     return findField(clazz, name, null);
   }
-  
+
   public static Field findField(Class<?> clazz, String name, Class<?> type) {
-    if(clazz == null) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    if(name == null || type == null) {
+    if (name == null || type == null) {
       throw new RuntimeException("Either name or type of the field must be specified");
     }
-    
+
     Class<?> searchType = clazz;
     while (Object.class != searchType && searchType != null) {
       Field[] fields = getDeclaredFields(searchType);
@@ -139,38 +144,42 @@ public final class ReflectUtils {
     }
     return null;
   }
-  
+
   /**
    * Returns an array of {@code Field} objects reflecting all the fields
-   * declared by the class or interface represented by this
-   * {@code Class} object. This includes public, protected, default
-   * (package) access, and private fields, and includes inherited fields.
+   * declared by the class or interface represented by this {@code Class}
+   * object. This includes public, protected, default (package) access, and
+   * private fields, and includes inherited fields.
+   * 
    * @param clazz
-   * @return  the LinkedList of {@code Field} objects representing all the
-     *          declared fields of this class
+   * @return the LinkedList of {@code Field} objects representing all the
+   *         declared fields of this class
    */
-  public static  Field[] getFields(Class<?> clazz) {
-    if(clazz == null) {
+  public static Field[] getFields(Class<?> clazz) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    
-    if(fieldsCache.containsKey(clazz)) {
+
+    if (fieldsCache.containsKey(clazz)) {
       return fieldsCache.get(clazz);
     }
-    
+
     List<Field> fieldList = fields(clazz);
-    Field[] fields = fieldList.toArray(new Field[]{});
-    
+    Field[] fields = fieldList.toArray(new Field[] {});
+
     fieldsCache.put(clazz, fields);
     return fields;
   }
-  
+
   /**
    * Set the field represented by the supplied {@link Field field object} on the
-   * specified {@link Object target object} to the specified {@code value}.
-   * In accordance with {@link Field#set(Object, Object)} semantics, the new value
+   * specified {@link Object target object} to the specified {@code value}. In
+   * accordance with {@link Field#set(Object, Object)} semantics, the new value
    * is automatically unwrapped if the underlying field has a primitive type.
-   * <p>Thrown exceptions are handled via a call to {@link #handleReflectionException(Exception)}.
+   * <p>
+   * Thrown exceptions are handled via a call to
+   * {@link #handleReflectionException(Exception)}.
+   * 
    * @param field the field to set
    * @param target the target object on which to set the field
    * @param value the value to set (may be {@code null})
@@ -178,19 +187,20 @@ public final class ReflectUtils {
   public static void setField(Field field, Object target, Object value) {
     try {
       field.set(target, value);
-    }
-    catch (IllegalAccessException ex) {
-      throw new IllegalStateException(
-          "Unexpected reflection exception - " + ex.getClass().getName() + ": " + ex.getMessage());
+    } catch (IllegalAccessException ex) {
+      throw new IllegalStateException("Unexpected reflection exception - " + ex.getClass().getName() + ": " + ex.getMessage());
     }
   }
 
   /**
    * Get the field represented by the supplied {@link Field field object} on the
-   * specified {@link Object target object}. In accordance with {@link Field#get(Object)}
-   * semantics, the returned value is automatically wrapped if the underlying field
-   * has a primitive type.
-   * <p>Thrown exceptions are handled via a call to {@link #handleReflectionException(Exception)}.
+   * specified {@link Object target object}. In accordance with
+   * {@link Field#get(Object)} semantics, the returned value is automatically
+   * wrapped if the underlying field has a primitive type.
+   * <p>
+   * Thrown exceptions are handled via a call to
+   * {@link #handleReflectionException(Exception)}.
+   * 
    * @param field the field to get
    * @param target the target object from which to get the field
    * @return the field's current value
@@ -198,17 +208,17 @@ public final class ReflectUtils {
   public static Object getField(Field field, Object target) {
     try {
       return field.get(target);
-    }
-    catch (IllegalAccessException ex) {
-      throw new IllegalStateException(
-          "Unexpected reflection exception - " + ex.getClass().getName() + ": " + ex.getMessage());
+    } catch (IllegalAccessException ex) {
+      throw new IllegalStateException("Unexpected reflection exception - " + ex.getClass().getName() + ": " + ex.getMessage());
     }
   }
 
   /**
-   * Attempt to find a {@link Method} on the supplied class with the supplied name
-   * and no parameters. Searches all superclasses up to {@code Object}.
-   * <p>Returns {@code null} if no {@link Method} can be found.
+   * Attempt to find a {@link Method} on the supplied class with the supplied
+   * name and no parameters. Searches all superclasses up to {@code Object}.
+   * <p>
+   * Returns {@code null} if no {@link Method} can be found.
+   * 
    * @param clazz the class to introspect
    * @param name the name of the method
    * @return the Method object, or {@code null} if none found
@@ -218,28 +228,29 @@ public final class ReflectUtils {
   }
 
   /**
-   * Attempt to find a {@link Method} on the supplied class with the supplied name
-   * and parameter types. Searches all superclasses up to {@code Object}.
-   * <p>Returns {@code null} if no {@link Method} can be found.
+   * Attempt to find a {@link Method} on the supplied class with the supplied
+   * name and parameter types. Searches all superclasses up to {@code Object}.
+   * <p>
+   * Returns {@code null} if no {@link Method} can be found.
+   * 
    * @param clazz the class to introspect
    * @param name the name of the method
-   * @param paramTypes the parameter types of the method
-   * (may be {@code null} to indicate any signature)
+   * @param paramTypes the parameter types of the method (may be {@code null} to
+   *          indicate any signature)
    * @return the Method object, or {@code null} if none found
    */
   public static Method findMethod(Class<?> clazz, String name, Class<?>... paramTypes) {
-    if(clazz == null) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    if(name == null) {
+    if (name == null) {
       throw new RuntimeException("Method name must not be null");
     }
     Class<?> searchType = clazz;
     while (searchType != null) {
       Method[] methods = (searchType.isInterface() ? searchType.getMethods() : getDeclaredMethods(searchType));
       for (Method method : methods) {
-        if (name.equals(method.getName()) &&
-            (paramTypes == null || Arrays.equals(paramTypes, method.getParameterTypes()))) {
+        if (name.equals(method.getName()) && (paramTypes == null || Arrays.equals(paramTypes, method.getParameterTypes()))) {
           return method;
         }
       }
@@ -249,9 +260,13 @@ public final class ReflectUtils {
   }
 
   /**
-   * Invoke the specified {@link Method} against the supplied target object with no arguments.
-   * The target object can be {@code null} when invoking a static {@link Method}.
-   * <p>Thrown exceptions are handled via a call to {@link #handleReflectionException}.
+   * Invoke the specified {@link Method} against the supplied target object with
+   * no arguments. The target object can be {@code null} when invoking a static
+   * {@link Method}.
+   * <p>
+   * Thrown exceptions are handled via a call to
+   * {@link #handleReflectionException}.
+   * 
    * @param method the method to invoke
    * @param target the target object to invoke the method on
    * @return the invocation result, if any
@@ -262,10 +277,13 @@ public final class ReflectUtils {
   }
 
   /**
-   * Invoke the specified {@link Method} against the supplied target object with the
-   * supplied arguments. The target object can be {@code null} when invoking a
-   * static {@link Method}.
-   * <p>Thrown exceptions are handled via a call to {@link #handleReflectionException}.
+   * Invoke the specified {@link Method} against the supplied target object with
+   * the supplied arguments. The target object can be {@code null} when invoking
+   * a static {@link Method}.
+   * <p>
+   * Thrown exceptions are handled via a call to
+   * {@link #handleReflectionException}.
+   * 
    * @param method the method to invoke
    * @param target the target object to invoke the method on
    * @param args the invocation arguments (may be {@code null})
@@ -274,19 +292,20 @@ public final class ReflectUtils {
   public static Object invokeMethod(Method method, Object target, Object... args) {
     try {
       return method.invoke(target, args);
-    }
-    catch (Exception ex) {
+    } catch (Exception ex) {
       handleReflectionException(ex);
     }
     throw new IllegalStateException("Should never get here");
   }
 
   /**
-   * Handle the given reflection exception. Should only be called if no
-   * checked exception is expected to be thrown by the target method.
-   * <p>Throws the underlying RuntimeException or Error in case of an
+   * Handle the given reflection exception. Should only be called if no checked
+   * exception is expected to be thrown by the target method.
+   * <p>
+   * Throws the underlying RuntimeException or Error in case of an
    * InvocationTargetException with such a root cause. Throws an
    * IllegalStateException with an appropriate message else.
+   * 
    * @param ex the reflection exception to handle
    */
   public static void handleReflectionException(Exception ex) {
@@ -299,7 +318,7 @@ public final class ReflectUtils {
     if (ex instanceof InvocationTargetException) {
       Throwable targetEx = ((InvocationTargetException) ex).getTargetException();
       String msg = null;
-      if(targetEx != null) {
+      if (targetEx != null) {
         msg = targetEx.getMessage();
         throw new RuntimeException(msg, targetEx);
       }
@@ -309,10 +328,11 @@ public final class ReflectUtils {
     }
     throw new RuntimeException(ex.getMessage(), ex);
   }
-  
+
   /**
-   * Determine whether the given method is a CGLIB 'renamed' method,
-   * following the pattern "CGLIB$methodName$0".
+   * Determine whether the given method is a CGLIB 'renamed' method, following
+   * the pattern "CGLIB$methodName$0".
+   * 
    * @param renamedMethod the method to check
    * @see org.springframework.cglib.proxy.Enhancer#rename
    */
@@ -323,23 +343,23 @@ public final class ReflectUtils {
       while (i >= 0 && Character.isDigit(name.charAt(i))) {
         i--;
       }
-      return ((i > CGLIB_RENAMED_METHOD_PREFIX.length()) &&
-            (i < name.length() - 1) && name.charAt(i) == '$');
+      return ((i > CGLIB_RENAMED_METHOD_PREFIX.length()) && (i < name.length() - 1) && name.charAt(i) == '$');
     }
     return false;
   }
+
   /**
-   * 如果一个方法参数是一个Collection，{@link #getActualTypeOfCollectionElement(Parameter)}函数能够
-   * 获得这个参数的泛型类型，如果不是Collection的实现类，或者没有泛型参数，则返回null
+   * 如果一个方法参数是一个Collection，{@link #getActualTypeOfCollectionElement(Parameter)}
+   * 函数能够 获得这个参数的泛型类型，如果不是Collection的实现类，或者没有泛型参数，则返回null
    */
   public static Class<?> getActualTypeOfCollectionElement(Parameter param) {
-    if(param == null) {
+    if (param == null) {
       throw new RuntimeException("Parameter must not be null");
     }
-    if(!ClassUtils.isAssignable(param.getType(), Collection.class, false)) {
+    if (!ClassUtils.isAssignable(param.getType(), Collection.class, false)) {
       return null;
     }
-    
+
     Type type = param.getParameterizedType();
     if (type instanceof ParameterizedType) {
       ParameterizedType elementType = (ParameterizedType) type;
@@ -347,9 +367,10 @@ public final class ReflectUtils {
     }
     return null;
   }
-  
+
   /**
    * 返回参数的“真实类型”，所谓“真实类型”，指的是，如果这个参数为Array或者Collection的时候，它的元素的类型。
+   * 
    * @param parameter 参数
    * @return
    */
@@ -367,26 +388,25 @@ public final class ReflectUtils {
 
     return elementType;
   }
- 
-  
+
   private static LinkedList<Field> fields(Class<?> clazz) {
-    if(clazz == null) {
+    if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
     LinkedList<Field> fields = new LinkedList<Field>();
     Field[] fs = getDeclaredFields(clazz);
-    if(fs != null) {
-      for(Field f : fs) {
+    if (fs != null) {
+      for (Field f : fs) {
         fields.add(f);
       }
     }
     Class<?> searchType = clazz.getSuperclass();
-  
+
     while (searchType != null && Object.class != searchType) {
       fields.addAll(fields(searchType));
       searchType = searchType.getSuperclass();
     }
-    
+
     return fields;
   }
 
@@ -398,7 +418,7 @@ public final class ReflectUtils {
     }
     return result;
   }
-  
+
   private static Method[] getDeclaredMethods(Class<?> clazz) {
     Method[] result = declaredMethodsCache.get(clazz);
     if (result == null) {
@@ -412,8 +432,7 @@ public final class ReflectUtils {
           result[index] = defaultMethod;
           index++;
         }
-      }
-      else {
+      } else {
         result = declaredMethods;
       }
       declaredMethodsCache.put(clazz, (result.length == 0 ? NO_METHODS : result));
@@ -435,9 +454,7 @@ public final class ReflectUtils {
     }
     return result;
   }
-  
-  
-  
+
   private ReflectUtils() {
 
   }
