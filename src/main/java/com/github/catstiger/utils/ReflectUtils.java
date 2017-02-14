@@ -128,7 +128,7 @@ public final class ReflectUtils {
     if (clazz == null) {
       throw new RuntimeException("Class must not be null");
     }
-    if (name == null || type == null) {
+    if (name == null && type == null) {
       throw new RuntimeException("Either name or type of the field must be specified");
     }
 
