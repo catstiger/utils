@@ -9,11 +9,14 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
@@ -44,10 +47,30 @@ public final class ReflectUtils {
    * Cache for {@link Class#getDeclaredFields()}, allowing for fast iteration.
    */
   private static final Map<Class<?>, Field[]> declaredFieldsCache = new ConcurrentHashMap<Class<?>, Field[]>(256);
+  
+  private static final Map<String, List<Method>> gettersCache = new ConcurrentHashMap<String, List<Method>>(256);
+
+  private static final Map<String, List<Method>> settersCache = new ConcurrentHashMap<String, List<Method>>(256);
+
 
   private static final Map<Class<?>, Field[]> fieldsCache = new ConcurrentHashMap<Class<?>, Field[]>(256);
 
   private static final Map<Class<?>, PropertyDescriptor[]> propertyDescriptorCache = new ConcurrentHashMap<Class<?>, PropertyDescriptor[]>(256);
+  
+  /**
+   * Getter 方法的前缀
+   */
+  public static final String GETTER_PREFIX = "get";
+
+  /**
+   * Setter 方法的前缀
+   */
+  public static final String SETTER_PREFIX = "set";
+
+  /**
+   * Accessor方法前缀的长度
+   */
+  public static final int ACCESSOR_PREFIX_LENGTH = "get".length();
 
   /**
    * Convenience method to instantiate a class using its no-arg constructor. As
@@ -387,6 +410,152 @@ public final class ReflectUtils {
     }
 
     return elementType;
+  }
+  
+  /**
+   * 调用标准java bean的 setter 方法.
+   * 
+   * @param targetObject the target object to be invoked
+   * @param propertyName property name of the setter, it can be a Database's
+   *          fieldname like first_name, the name like that will be trained as
+   *          firstName and invoke setFirstName
+   * @param value
+   */
+  public static void set(Object targetObject, String propertyName, Object value) {
+    Objects.requireNonNull(targetObject);
+    Class<?> clazz = targetObject.getClass();
+    Method potentialSetter = findMethod(clazz, "set" + StringUtils.upperFirst(StringUtils.toCamelCase(propertyName)), value.getClass());
+    if (potentialSetter != null) {
+      invokeMethod(potentialSetter, targetObject, new Object[] { value });
+    } else {
+      reportNoSuchMethodException(clazz, propertyName);
+    }
+  }
+ 
+  
+  /**
+   * 根据属性名称，调用其对应的getter方法，返回属性值
+   * @param targetObject 该属性所在的对象
+   * @param propertyName 属性名称，支持蛇形命名（Snake Case）,在这种情况下，会自动转换为驼峰命名（Camel Case）
+   * @return
+   */
+  public static Object get(Object targetObject, String propertyName) {
+    Objects.requireNonNull(targetObject);
+    Class<?> clazz = targetObject.getClass();
+    Method potentialGetter = findMethod(clazz, "get" + StringUtils.upperFirst(StringUtils.toCamelCase(propertyName)));
+    if (potentialGetter != null) {
+      return invokeMethod(potentialGetter, targetObject);
+    } else {
+      reportNoSuchMethodException(clazz, propertyName);
+      return null;
+    }
+  }
+  
+  /**
+   * 调用多个连续的getter，例如user.role.id, 会调用getUser().getRole().getId()
+   */
+  public static Object nestedGet(Object bean, String property) {
+    Objects.requireNonNull(bean);
+    Assert.hasText(property);
+
+    String[] propertyNames = property.split("\\.");
+    Object value = bean;
+    for (int i = 0; i < propertyNames.length; i++) {
+      value = get(value, propertyNames[i]);
+    }
+
+    return value;
+  }
+
+  
+  /**
+   * Rethrow a IllegalStateException when catch NoSuchMethodException.
+   */
+  public static void reportNoSuchMethodException(Class<?> clazz, String methodName) {
+    logger.error(new StringBuffer("Method not found ").append(clazz.getName()).append("#").append(methodName)
+        .toString());
+  }
+  
+  /**
+   * find all getter's ,confirm to JavaBean spec.Igore getClass() method.
+   */
+  public static List<Method> getters(Class<?> clazz, boolean declaredOnly) {
+    Objects.requireNonNull(clazz);
+    String key = new StringBuilder(clazz.getName()).append("#getters#").append(declaredOnly).toString();
+    if(gettersCache.containsKey(key)) {
+      return gettersCache.get(key);
+    }
+
+    Method[] all = (declaredOnly) ? clazz.getDeclaredMethods() : clazz.getMethods();
+    if (all == null) {
+      return Collections.emptyList();
+    }
+    List<Method> getters = new ArrayList<Method>(all.length);
+    for (int i = 0; i < all.length; i++) {
+      if (!isGetter(clazz, all[i])) {
+        continue;
+      }
+      if (!all[i].getDeclaringClass().equals(Object.class)) {
+        getters.add(all[i]);
+      }
+    }
+    gettersCache.put(key, getters);
+    
+    return getters;
+  }
+
+  /**
+   * find all setter's ,confirm to JavaBean spec.
+   */
+  public static List<Method> setters(Class<?> clazz, boolean declaredOnly) {
+    Objects.requireNonNull(clazz);
+    String key = new StringBuilder(clazz.getName()).append("#setters#").append(declaredOnly).toString();
+    if(settersCache.containsKey(key)) {
+      return settersCache.get(key);
+    }
+
+    Method[] all = (declaredOnly) ? clazz.getDeclaredMethods() : clazz.getMethods();
+    if (all == null) {
+      return Collections.emptyList();
+    }
+    List<Method> setters = new ArrayList<Method>(all.length);
+    for (int i = 0; i < all.length; i++) {
+      if (!isSetter(clazz, all[i])) {
+        continue;
+      }
+      setters.add(all[i]);
+    }
+    settersCache.put(key, setters);
+    return setters;
+  }
+  
+  
+  /**
+   * 判断一个Method是否是标准的Java Bean Getter
+   */
+  public static boolean isGetter(Class<?> clazz, Method method) {
+    if(method == null) {
+      return false;
+    }
+    if(method.getName().indexOf(GETTER_PREFIX) != 0 || !Character.isUpperCase(method.getName().charAt(ACCESSOR_PREFIX_LENGTH))) {
+      return false;
+    }
+    
+    return method.getParameterCount() == 0;
+  }
+  
+  /**
+   * 判断一个Method是否是标准的Java Bean Getter
+   */
+  public static boolean isSetter(Class<?> clazz, Method method) {
+    if(method == null) {
+      return false;
+    }
+    if(method.getName().indexOf(SETTER_PREFIX) != 0 || !Character.isUpperCase(method.getName().charAt(ACCESSOR_PREFIX_LENGTH))) {
+      return false;
+    }
+    
+    return method.getParameterCount() == 1;
   }
 
   private static LinkedList<Field> fields(Class<?> clazz) {
