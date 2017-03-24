@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -527,6 +528,45 @@ public final class ReflectUtils {
     }
     settersCache.put(key, setters);
     return setters;
+  }
+  
+  /**
+   * 将一个Bean转换为Map，Map的"key"是属性名称，value是属性值.只包含当前对象的字段， 父类的字段不包括。
+   * 
+   * @param bean 指定的bean
+   * @param propertyNames 被转换的属性的名称列表 如果为<code>null</code> 或长度为<code>0</code>
+   *          ，返回所有字段.
+   * 
+   */
+  public static Map<String, Object> toMap(Object bean, String...propertyNames) {
+     // 如果没有指定属性名称，返回所有属性组成的map
+    if (propertyNames == null || propertyNames.length == 0) {
+      List<Method> getters =  getters(bean.getClass(), false);
+      Map<String, Object> map = new HashMap<String, Object>(getters.size());
+      
+      for (Method method : getters) {
+        if (isGetter(bean.getClass(), method)) {
+          String property = StringUtils.lowerFirst(method.getName().substring(ACCESSOR_PREFIX_LENGTH, method.getName().length()));
+          Object value = invokeMethod(method, bean);
+          if(value != null) {
+            map.put(property, value);
+          }
+        }
+      }
+      
+      return map;
+    }
+    //返回制定字段
+    Map<String, Object> map = new HashMap<String, Object>(propertyNames.length);
+    for (String fieldName : propertyNames) {
+      // 获取属性值
+      Object value = get(bean, fieldName);
+      if(value != null) {
+        map.put(fieldName, value);
+      }
+    }
+
+    return map;
   }
   
   
