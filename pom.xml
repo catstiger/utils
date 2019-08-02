@@ -56,26 +56,12 @@
   		<groupId>junit</groupId>
   		<artifactId>junit</artifactId>
   		<version>4.8.2</version>
-  		<scope>test</scope>
   	</dependency>
     
   </dependencies>
   
   <repositories>
-      <repository>
-					<id>Honqun Nexus</id>
-					<name>Honqun Repository</name>
-					<url>http://115.28.55.60:8081/nexus/content/groups/public/</url>
-					<snapshots>
-						<enabled>false</enabled>
-					</snapshots>
-		  </repository>
-		
-		  <repository>
-					<id>Honqun Nexus 3dp</id>
-					<name>Honqun Repository 3dp</name>
-					<url>http://115.28.55.60:8081/nexus/content/repositories/thirdparty/</url>			
-		  </repository>
+      
   </repositories>
   <organization>
   	<name>Honqun.org</name>
